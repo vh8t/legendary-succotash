@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -e
+
+echo "Building backend image..."
+podman build -t vault-backend ./backend
+
+echo "Building frontend image..."
+podman build -t vault-frontend ./frontend
+
+echo "Creating pod..."
+podman pod exists vault-pod && podman pod rm -f vault-pod
+podman pod create --name vault-pod -p 8080:80 -p 8000:8000
+
+echo "Creating persistent storage volume..."
+podman volume exists vault-storage || podman volume create vault-storage
+
+echo "Starting backend container..."
+podman run -d --pod vault-pod \
+  --name vault-api \
+  -v vault-storage:/app/data \
+  vault-backend
+
+echo "Starting frontend container..."
+podman run -d --pod vault-pod \
+  --name vault-web \
+  vault-frontend
+
+echo "Deployment successful"
+echo "  http://localhost:8080"

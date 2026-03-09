@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+echo "Stopping LocalVault..."
+if podman pod exists vault-pod; then
+  podman pod stop vault-pod
+  echo "Pod stopped successfully"
+else
+  echo "Pod 'vault-pod' does not exist"
+fi

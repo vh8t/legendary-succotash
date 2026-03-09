@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+podman exec -it vault-api uv run python archive_files.py
