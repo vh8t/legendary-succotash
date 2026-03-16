@@ -13,11 +13,13 @@ def hash_password(password: str) -> str:
 
 
 async def main():
+    # Zepta se na jmeno uzivatele
     username = input("Enter new username: ").strip()
     if not username:
         print("Username cannot be empty.")
         return
 
+    # zepta se na heslo uzivatele
     password = getpass.getpass("Enter password: ")
     confirm_password = getpass.getpass("Confirm password: ")
 
@@ -31,6 +33,7 @@ async def main():
 
     hashed_pw = hash_password(password)
 
+    # vytvori zaznam v databazi
     async with aiosqlite.connect(DB_FILE, timeout=20) as db:
         try:
             await db.execute(

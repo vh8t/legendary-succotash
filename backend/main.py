@@ -11,13 +11,17 @@ from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 
-DB_FILE = "data/vault.db"
-STORAGE_DIR = "data/vault_data"
-SECRET_KEY = "lmao-secret-key"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+# JWT = json web token
+# pouziva se na overeni uzivatele
+
+DB_FILE = "data/vault.db"  # cesta k souboru database
+STORAGE_DIR = "data/vault_data"  # cesta k slozce na ukladani souboru
+SECRET_KEY = "lmao-secret-key"  # secret key na generovani JWT
+ALGORITHM = "HS256"  # algoritmus na hashovani hesla
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # delka zivotnosti JWT
 
 
+# Struktura uzivatele v databazi
 class UserCreate(BaseModel):
     username: str
     password: str
@@ -27,6 +31,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
 def hash_password(password: str) -> str:
+    # salt = sul = nahodne vygenerovana hodnota aby neslo zjistit heslo z hashe
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
@@ -37,6 +42,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     )
 
 
+# vytvoreni noveho JWT s zivotnosti ACCESS_TOKEN_EXPIRE_MINUTES
 def create_access_token(data: dict):
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -44,6 +50,7 @@ def create_access_token(data: dict):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+# funkce vrati uzivatelske jmeno pokud je JWT validni (neni starsi jak ACCESS_TOKEN_EXPIRE_MINUTES)
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -59,6 +66,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    # Tahle funkce se spusti pri inicializaci API
     os.makedirs(STORAGE_DIR, exist_ok=True)
     async with aiosqlite.connect(DB_FILE, timeout=20) as db:
         await db.execute("PRAGMA journal_mode=WAL;")
@@ -82,8 +90,10 @@ async def lifespan(_: FastAPI):
     yield
 
 
+# API objekt
 app = FastAPI(lifespan=lifespan)
 
+# Prevence proti CORS (Cross origin resource idk)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -98,11 +108,15 @@ app.add_middleware(
 )
 
 
+# <webova stranka>/me
+# vrati uzivatelske jmeno pokud funkce pokud ma uzivatel opravneni
 @app.get("/me")
 async def verify_token(current_user: str = Depends(get_current_user)):
     return {"username": current_user}
 
 
+# <webova stranka>/login
+# Zkontroluje prihlasovaci udaje, pokud nesedi vrati 401 (Unauthorized)
 @app.post("/login")
 async def login(user: UserCreate):
     async with aiosqlite.connect(DB_FILE, timeout=20) as db:
@@ -120,6 +134,8 @@ async def login(user: UserCreate):
             return {"access_token": access_token, "token_type": "bearer"}
 
 
+# <webova stranka>/files
+# Vrati jmena vsech ulozenych souboru v databazy pokud ma uzivatel opravneni
 @app.get("/files")
 async def list_files(_: str = Depends(get_current_user)):
     async with aiosqlite.connect(DB_FILE, timeout=20) as db:
@@ -133,6 +149,8 @@ async def list_files(_: str = Depends(get_current_user)):
             return {"files": [dict(row) for row in rows]}
 
 
+# <webova stranka>/files
+# Ulozi soubory do databaze pokud ma uzivatel opravneni
 @app.post("/files")
 async def handle_upload(
     files: list[UploadFile] = File(...), current_user: str = Depends(get_current_user)
@@ -147,9 +165,11 @@ async def handle_upload(
             file_path = os.path.join(STORAGE_DIR, file.filename)
             content = await file.read()
 
+            # Ulozi soubor do uloziste
             with open(file_path, "wb") as f:
                 f.write(content)
 
+            # Zapise do databaze ze soubor existuje
             await db.execute(
                 "INSERT INTO files (filename, size, uploader) VALUES (?, ?, ?)",
                 (file.filename, len(content), current_user),
@@ -164,6 +184,8 @@ async def handle_upload(
     }
 
 
+# <webova stranka>/file/<id>
+# Posle soubor <id> pokud ma uzivatel opravneni a soubor existuje
 @app.get("/file/{id}")
 async def fetch_file(id: int, _: str = Depends(get_current_user)):
     async with aiosqlite.connect(DB_FILE, timeout=20) as db:
@@ -190,6 +212,8 @@ async def fetch_file(id: int, _: str = Depends(get_current_user)):
             )
 
 
+# <webova stranka>/file/<id>
+# Smaze soubor <id> a zaznam z databaze pokud ma uzivatel opravneni a soubor existuje
 @app.delete("/file/{id}")
 async def delete_file(id: int, current_user: str = Depends(get_current_user)):
     async with aiosqlite.connect(DB_FILE, timeout=20) as db:
